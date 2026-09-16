@@ -90,17 +90,8 @@ cmake --build build -j
 
 ## Running
 
-Must be run from the project root directory:
-
 ```bash
 ./build/flower
-```
-
-Because the program loads shaders by default from the current directory:
-
-```
-shaders/flower.vert    # Vertex shader
-shaders/flower.frag    # Fragment shader (rainbow color mapping)
 ```
 
 ## Controls
