@@ -29,7 +29,23 @@ else()
     endif()
 endif()
 
+# Generate C headers from shader files (embedded into executable)
+function(embed_shader shader_path header_name var_name)
+    file(READ ${shader_path} shader_content)
+    # Escape backslashes, quotes, and newlines for C string literal
+    string(REPLACE "\\" "\\\\" shader_content "${shader_content}")
+    string(REPLACE "\"" "\\\"" shader_content "${shader_content}")
+    string(REPLACE "\n" "\\n" shader_content "${shader_content}")
+    string(REPLACE "\r" "\\r" shader_content "${shader_content}")
+    file(WRITE ${CMAKE_BINARY_DIR}/${header_name} "static const char *${var_name} = \"${shader_content}\";\n")
+endfunction()
+
+embed_shader(${CMAKE_SOURCE_DIR}/shaders/flower.vert flower_vert.h g_flower_vert_src)
+embed_shader(${CMAKE_SOURCE_DIR}/shaders/flower.frag flower_frag.h g_flower_frag_src)
+
 add_executable(flower src/main.c)
+
+target_include_directories(flower PRIVATE ${CMAKE_BINARY_DIR})
 
 if(GLFW_INCLUDE)
     target_include_directories(flower PRIVATE ${GLFW_INCLUDE})
@@ -52,6 +68,3 @@ if(MSVC)
 else()
     target_compile_options(flower PRIVATE -O3 -march=native -ffast-math)
 endif()
-
-# Copy shaders to build directory
-file(COPY ${CMAKE_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR})

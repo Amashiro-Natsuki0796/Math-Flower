@@ -23,6 +23,9 @@
 #include <stdbool.h>
 #include <omp.h>
 
+#include "flower_vert.h"
+#include "flower_frag.h"
+
 #define T_COUNT 1151
 #define X_COUNT 25
 #define VERTEX_COUNT (T_COUNT * X_COUNT)
@@ -61,28 +64,12 @@ static GLuint compile_shader(GLenum t, const char *s) {
     return sh;
 }
 
-static char *read_file(const char *p) {
-    FILE *f = fopen(p, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *d = malloc(sz + 1);
-    if (!d) { fclose(f); return NULL; }
-    size_t n = fread(d, 1, sz, f);
-    fclose(f);
-    d[n] = '\0';
-    return d;
-}
-
-static GLuint create_program(const char *vp, const char *fp) {
-    char *vs = read_file(vp), *fs = read_file(fp);
-    if (!vs || !fs) fatal("Cannot read shaders");
-    GLuint v = compile_shader(GL_VERTEX_SHADER, vs);
-    GLuint f = compile_shader(GL_FRAGMENT_SHADER, fs);
+static GLuint create_program(const char *vs_src, const char *fs_src) {
+    GLuint v = compile_shader(GL_VERTEX_SHADER, vs_src);
+    GLuint f = compile_shader(GL_FRAGMENT_SHADER, fs_src);
     GLuint p = glCreateProgram();
     glAttachShader(p, v); glAttachShader(p, f); glLinkProgram(p);
-    free(vs); free(fs); glDeleteShader(v); glDeleteShader(f);
+    glDeleteShader(v); glDeleteShader(f);
     GLint ok;
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
@@ -457,7 +444,7 @@ int main(void) {
 
     printf("OpenGL: %s %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 
-    g_prog = create_program("shaders/flower.vert", "shaders/flower.frag");
+    g_prog = create_program(g_flower_vert_src, g_flower_frag_src);
     g_grid_prog = create_grid_prog();
     upload_mesh();
     create_grid();
