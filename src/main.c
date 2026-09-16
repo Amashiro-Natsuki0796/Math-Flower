@@ -1,6 +1,8 @@
 #ifdef _WIN32
     #define _CRT_SECURE_NO_WARNINGS
     #include <malloc.h>
+    #include <windows.h>
+    #include <psapi.h>
     #define aligned_alloc(a, s) _aligned_malloc(s, a)
     #define free_aligned(p) _aligned_free(p)
 #else
@@ -23,6 +25,11 @@
 #include <stdbool.h>
 #include <omp.h>
 
+#ifdef __linux__
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
 #include "flower_vert.h"
 #include "flower_frag.h"
 
@@ -41,8 +48,162 @@ static GLuint g_prog, g_grid_prog, g_vao, g_grid_vao, g_vbo, g_ebo, g_grid_vbo;
 static float g_dist = 4.0f;
 static Quat g_rot = {1, 0, 0, 0};
 static bool g_drag = false;
+static bool g_perf_dirty = false;
 static double g_lx, g_ly;
 static int g_w = 1280, g_h = 720;
+
+static int g_fps = 0;
+static float g_cpu_usage = 0.0f;
+static float g_gpu_usage = 0.0f;
+static int g_frame_count = 0;
+static double g_fps_timer = 0.0;
+
+#ifdef _WIN32
+static ULARGE_INTEGER g_last_cpu_time = {0};
+static ULARGE_INTEGER g_last_sys_time = {0};
+static int g_cpu_cores = 0;
+#endif
+
+#ifdef __linux__
+static long g_sysconf_clk_tck = 0;
+static unsigned long g_last_proc_utime = 0;
+static unsigned long g_last_proc_stime = 0;
+static unsigned long g_last_total_time = 0;
+#endif
+
+static void init_perf_monitor(void) {
+#ifdef _WIN32
+    g_cpu_cores = omp_get_num_procs();
+    FILETIME idle, kernel, user, sys, proc_kernel, proc_user;
+    GetSystemTimes(&idle, &kernel, &user);
+    g_last_sys_time.LowPart = kernel.dwLowDateTime + user.dwLowDateTime;
+    g_last_sys_time.HighPart = kernel.dwHighDateTime + user.dwHighDateTime;
+    HANDLE hProc = GetCurrentProcess();
+    GetProcessTimes(hProc, &idle, &idle, &proc_kernel, &proc_user);
+    g_last_cpu_time.LowPart = proc_kernel.dwLowDateTime + proc_user.dwLowDateTime;
+    g_last_cpu_time.HighPart = proc_kernel.dwHighDateTime + proc_user.dwHighDateTime;
+#endif
+#ifdef __linux__
+    g_sysconf_clk_tck = sysconf(_SC_CLK_TCK);
+    FILE *fp = fopen("/proc/stat", "r");
+    if (fp) {
+        unsigned long user, nice, sys, idle, iowait, irq, softirq, steal;
+        if (fscanf(fp, "cpu %lu %lu %lu %lu %lu %lu %lu %lu",
+               &user, &nice, &sys, &idle, &iowait, &irq, &softirq, &steal) == 8) {
+            g_last_total_time = user + nice + sys + idle + iowait + irq + softirq + steal;
+        }
+        fclose(fp);
+    }
+    int pid = getpid();
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    fp = fopen(path, "r");
+    if (fp) {
+        unsigned long utime, stime;
+        int dummy;
+        for (int i = 0; i < 13; i++) { if (fscanf(fp, "%d ", &dummy) != 1) break; }
+        if (fscanf(fp, "%lu %lu", &utime, &stime) == 2) {
+            g_last_proc_utime = utime;
+            g_last_proc_stime = stime;
+        }
+        fclose(fp);
+    }
+#endif
+}
+
+static void update_perf_monitor(void) {
+    if (!g_perf_dirty) return;
+    
+    g_frame_count++;
+    double now = glfwGetTime();
+    if (now - g_fps_timer >= 1.0) {
+        g_fps = g_frame_count;
+        g_frame_count = 0;
+        g_fps_timer = now;
+
+#ifdef _WIN32
+        FILETIME idle, kernel, user, sys, proc_kernel, proc_user;
+        GetSystemTimes(&idle, &kernel, &user);
+        ULARGE_INTEGER cur_sys;
+        cur_sys.LowPart = kernel.dwLowDateTime + user.dwLowDateTime;
+        cur_sys.HighPart = kernel.dwHighDateTime + user.dwHighDateTime;
+        ULONGLONG sys_diff = cur_sys.QuadPart - g_last_sys_time.QuadPart;
+        if (sys_diff > 0) {
+            g_cpu_usage = 100.0f - (100.0f * (float)(cur_sys.QuadPart - g_last_sys_time.QuadPart) / (float)sys_diff);
+            g_cpu_usage = 100.0f + g_cpu_usage;
+            if (g_cpu_usage < 0) g_cpu_usage = 0;
+            if (g_cpu_usage > 100) g_cpu_usage = 100;
+        }
+        g_last_sys_time = cur_sys;
+
+        HANDLE hProc = GetCurrentProcess();
+        GetProcessTimes(hProc, &idle, &idle, &proc_kernel, &proc_user);
+        ULARGE_INTEGER cur_proc;
+        cur_proc.LowPart = proc_kernel.dwLowDateTime + proc_user.dwLowDateTime;
+        cur_proc.HighPart = proc_kernel.dwHighDateTime + proc_user.dwHighDateTime;
+        ULONGLONG proc_diff = cur_proc.QuadPart - g_last_cpu_time.QuadPart;
+        if (sys_diff > 0) {
+            float proc_cpu = (100.0f * (float)proc_diff / (float)sys_diff);
+            g_cpu_usage = proc_cpu;
+        }
+        g_last_cpu_time = cur_proc;
+#endif
+
+#ifdef __linux__
+        FILE *fp = fopen("/proc/stat", "r");
+        unsigned long cur_total = 0, cur_idle = 0;
+        if (fp) {
+            unsigned long user, nice, sys, idle, iowait, irq, softirq, steal;
+            if (fscanf(fp, "cpu %lu %lu %lu %lu %lu %lu %lu %lu",
+                   &user, &nice, &sys, &idle, &iowait, &irq, &softirq, &steal) == 8) {
+                cur_total = user + nice + sys + idle + iowait + irq + softirq + steal;
+                cur_idle = idle + iowait;
+            }
+            fclose(fp);
+        }
+        unsigned long total_diff = cur_total - g_last_total_time;
+        unsigned long idle_diff = cur_idle - (g_last_total_time - g_last_proc_utime - g_last_proc_stime);
+        if (total_diff > 0) {
+            g_cpu_usage = 100.0f * (1.0f - (float)idle_diff / (float)total_diff);
+            if (g_cpu_usage < 0) g_cpu_usage = 0;
+            if (g_cpu_usage > 100) g_cpu_usage = 100;
+        }
+        g_last_total_time = cur_total;
+
+        int pid = getpid();
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+        fp = fopen(path, "r");
+        if (fp) {
+            unsigned long utime, stime;
+            int dummy;
+            for (int i = 0; i < 13; i++) { if (fscanf(fp, "%d ", &dummy) != 1) break; }
+            if (fscanf(fp, "%lu %lu", &utime, &stime) == 2) {
+                g_last_proc_utime = utime;
+                g_last_proc_stime = stime;
+            }
+            fclose(fp);
+        }
+#endif
+
+        g_gpu_usage = (float)g_fps / 60.0f * 100.0f;
+        if (g_gpu_usage > 100.0f) g_gpu_usage = 100.0f;
+    }
+}
+
+static void print_perf_info(void) {
+    if (!g_perf_dirty) return;
+    
+    printf("\033[2J\033[H");
+    printf("=== Flower OpenGL Performance Monitor ===\n");
+    printf("FPS:     %d\n", g_fps);
+    printf("CPU:     %.1f%%\n", g_cpu_usage);
+    printf("GPU:     %.1f%% (estimated)\n", g_gpu_usage);
+    printf("=========================================\n");
+    fflush(stdout);
+    
+    g_perf_dirty = false;
+}
 
 static void fatal(const char *m) { fprintf(stderr, "ERROR: %s\n", m); glfwTerminate(); exit(1); }
 
@@ -374,6 +535,7 @@ static void mouse_cb(GLFWwindow *w, int btn, int act, int mods) {
     if (btn != GLFW_MOUSE_BUTTON_LEFT) return;
     if (act == GLFW_PRESS) {
         g_drag = true;
+        g_perf_dirty = true;
         glfwGetCursorPos(g_win, &g_lx, &g_ly);
     } else if (act == GLFW_RELEASE) {
         g_drag = false;
@@ -386,6 +548,7 @@ static void cursor_cb(GLFWwindow *w, double xp, double yp) {
     float dx = xp - g_lx, dy = yp - g_ly;
     g_lx = xp; g_ly = yp;
     apply_rot(dx, dy);
+    g_perf_dirty = true;
 }
 
 static void scroll_cb(GLFWwindow *w, double xo, double yo) {
@@ -417,7 +580,33 @@ static void render(void) {
     glBindVertexArray(0);
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+#ifdef _WIN32
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        AllocConsole();
+    }
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
+#elif defined(__linux__)
+    if (!isatty(STDOUT_FILENO) && getenv("FLOWER_TERM") == NULL) {
+        setenv("FLOWER_TERM", "1", 1);
+        const char *terminals[] = {
+            "gnome-terminal --", "x-terminal-emulator -e", "xterm -e",
+            "konsole -e", "mate-terminal -e", "xfce4-terminal -e", NULL
+        };
+        for (int i = 0; terminals[i]; i++) {
+            char cmd[512];
+            char exe_path[512];
+            ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+            if (len > 0) {
+                exe_path[len] = '\0';
+                snprintf(cmd, sizeof(cmd), "%s %s", terminals[i], exe_path);
+                if (system(cmd) == 0) return 0;
+            }
+        }
+    }
+#endif
+
     omp_set_num_threads(omp_get_num_procs());
     if (!glfwInit()) fatal("GLFW init failed");
 
@@ -449,8 +638,12 @@ int main(void) {
     upload_mesh();
     create_grid();
 
+    init_perf_monitor();
+
     while (!glfwWindowShouldClose(g_win)) {
         render();
+        update_perf_monitor();
+        print_perf_info();
         glfwSwapBuffers(g_win);
         glfwPollEvents();
     }

@@ -101,6 +101,21 @@ cmake --build build -j
 | Left mouse button + drag | Rotate the flower |
 | Mouse scroll wheel | Zoom (1.0 ~ 20.0) |
 
+## Performance Monitor
+
+The program displays real-time performance metrics in the terminal/console window:
+
+- **FPS**: Frames per second
+- **CPU**: Process CPU usage percentage
+- **GPU**: Estimated GPU utilization (based on FPS ratio)
+
+Performance info only refreshes when you interact with the window (mouse drag or scroll wheel), avoiding unnecessary terminal output during idle periods.
+
+### Terminal Auto-Launch
+
+- **Windows**: Automatically opens a console window if not launched from an existing terminal
+- **Linux**: Automatically opens a terminal window (gnome-terminal, xterm, konsole, etc.) if stdout is not connected to a TTY
+
 ### Performance Optimization
 
 - Uses `aligned_alloc` for 64-byte aligned memory allocation

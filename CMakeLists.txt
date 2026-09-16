@@ -62,6 +62,11 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(flower m)
 endif()
 
+# Windows needs psapi for GetProcessTimes
+if(WIN32)
+    target_link_libraries(flower psapi)
+endif()
+
 # Compiler options
 if(MSVC)
     target_compile_options(flower PRIVATE /O2)
