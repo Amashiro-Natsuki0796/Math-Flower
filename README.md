@@ -88,6 +88,23 @@ cmake -S . -B build -G "MinGW Makefiles"
 cmake --build build -j
 ```
 
+### Windows (MinGW) - Static Build (Single EXE, No DLLs Required)
+
+To build a standalone executable with all dependencies embedded (no external DLL files needed):
+
+```bash
+# First, configure CMake to generate shader headers
+cmake -S . -B build -G "MinGW Makefiles"
+
+# Then compile statically using GCC directly
+gcc -I build -std=gnu11 -O3 -march=native -ffast-math -fopenmp ^
+    -static -static-libgcc -static-libstdc++ ^
+    -o build/flower.exe src/main.c ^
+    -lglfw3 -lopengl32 -lgdi32 -lgomp -lmingwthrd -lwinpthread -lm
+```
+
+> **Note**: Ensure MinGW-w64 bin directory is in your PATH (e.g., `D:\MSYS\mingw64\bin`). The static build produces a single `flower.exe` (~1.1 MB) that runs on any Windows machine without requiring `glfw3.dll`, `libgomp-1.dll`, or `libwinpthread-1.dll`.
+
 ## Running
 
 ```bash

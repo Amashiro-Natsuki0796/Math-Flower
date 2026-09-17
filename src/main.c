@@ -13,7 +13,94 @@
 #include <GLFW/glfw3.h>
 
 #ifdef _WIN32
+    #include <windows.h>
     #include <GL/gl.h>
+    #include <GL/glext.h>
+
+    /* Function pointers for OpenGL 2.0+ functions not in Windows opengl32.dll */
+    PFNGLCREATESHADERPROC         ptr_glCreateShader;
+    PFNGLSHADERSOURCEPROC         ptr_glShaderSource;
+    PFNGLCOMPILESHADERPROC        ptr_glCompileShader;
+    PFNGLGETSHADERIVPROC          ptr_glGetShaderiv;
+    PFNGLGETSHADERINFOLOGPROC     ptr_glGetShaderInfoLog;
+    PFNGLCREATEPROGRAMPROC        ptr_glCreateProgram;
+    PFNGLATTACHSHADERPROC         ptr_glAttachShader;
+    PFNGLLINKPROGRAMPROC          ptr_glLinkProgram;
+    PFNGLDELETESHADERPROC         ptr_glDeleteShader;
+    PFNGLGETPROGRAMIVPROC         ptr_glGetProgramiv;
+    PFNGLGETPROGRAMINFOLOGPROC    ptr_glGetProgramInfoLog;
+    PFNGLGENVERTEXARRAYSPROC      ptr_glGenVertexArrays;
+    PFNGLGENBUFFERSPROC           ptr_glGenBuffers;
+    PFNGLBINDVERTEXARRAYPROC      ptr_glBindVertexArray;
+    PFNGLBINDBUFFERPROC           ptr_glBindBuffer;
+    PFNGLBUFFERDATAPROC           ptr_glBufferData;
+    PFNGLVERTEXATTRIBPOINTERPROC  ptr_glVertexAttribPointer;
+    PFNGLENABLEVERTEXATTRIBARRAYPROC ptr_glEnableVertexAttribArray;
+    PFNGLUSEPROGRAMPROC           ptr_glUseProgram;
+    PFNGLGETUNIFORMLOCATIONPROC   ptr_glGetUniformLocation;
+    PFNGLUNIFORMMATRIX4FVPROC     ptr_glUniformMatrix4fv;
+    PFNGLDELETEBUFFERSPROC        ptr_glDeleteBuffers;
+    PFNGLDELETEVERTEXARRAYSPROC   ptr_glDeleteVertexArrays;
+    PFNGLDELETEPROGRAMPROC        ptr_glDeleteProgram;
+
+    /* glDrawElements is OpenGL 1.1 but may not be declared in MinGW-w64 gl.h */
+    typedef void (APIENTRYP PFNGLDRAWELEMENTSPROC) (GLenum mode, GLsizei count, GLenum type, const void *indices);
+    PFNGLDRAWELEMENTSPROC         ptr_glDrawElements;
+
+    static void load_gl_functions(void) {
+        ptr_glCreateShader         = (PFNGLCREATESHADERPROC)         glfwGetProcAddress("glCreateShader");
+        ptr_glShaderSource         = (PFNGLSHADERSOURCEPROC)         glfwGetProcAddress("glShaderSource");
+        ptr_glCompileShader        = (PFNGLCOMPILESHADERPROC)        glfwGetProcAddress("glCompileShader");
+        ptr_glGetShaderiv          = (PFNGLGETSHADERIVPROC)          glfwGetProcAddress("glGetShaderiv");
+        ptr_glGetShaderInfoLog     = (PFNGLGETSHADERINFOLOGPROC)     glfwGetProcAddress("glGetShaderInfoLog");
+        ptr_glCreateProgram        = (PFNGLCREATEPROGRAMPROC)        glfwGetProcAddress("glCreateProgram");
+        ptr_glAttachShader         = (PFNGLATTACHSHADERPROC)         glfwGetProcAddress("glAttachShader");
+        ptr_glLinkProgram          = (PFNGLLINKPROGRAMPROC)          glfwGetProcAddress("glLinkProgram");
+        ptr_glDeleteShader         = (PFNGLDELETESHADERPROC)         glfwGetProcAddress("glDeleteShader");
+        ptr_glGetProgramiv         = (PFNGLGETPROGRAMIVPROC)         glfwGetProcAddress("glGetProgramiv");
+        ptr_glGetProgramInfoLog    = (PFNGLGETPROGRAMINFOLOGPROC)    glfwGetProcAddress("glGetProgramInfoLog");
+        ptr_glGenVertexArrays      = (PFNGLGENVERTEXARRAYSPROC)      glfwGetProcAddress("glGenVertexArrays");
+        ptr_glGenBuffers           = (PFNGLGENBUFFERSPROC)           glfwGetProcAddress("glGenBuffers");
+        ptr_glBindVertexArray      = (PFNGLBINDVERTEXARRAYPROC)      glfwGetProcAddress("glBindVertexArray");
+        ptr_glBindBuffer           = (PFNGLBINDBUFFERPROC)           glfwGetProcAddress("glBindBuffer");
+        ptr_glBufferData           = (PFNGLBUFFERDATAPROC)           glfwGetProcAddress("glBufferData");
+        ptr_glVertexAttribPointer  = (PFNGLVERTEXATTRIBPOINTERPROC)  glfwGetProcAddress("glVertexAttribPointer");
+        ptr_glEnableVertexAttribArray = (PFNGLENABLEVERTEXATTRIBARRAYPROC) glfwGetProcAddress("glEnableVertexAttribArray");
+        ptr_glUseProgram           = (PFNGLUSEPROGRAMPROC)           glfwGetProcAddress("glUseProgram");
+        ptr_glGetUniformLocation   = (PFNGLGETUNIFORMLOCATIONPROC)   glfwGetProcAddress("glGetUniformLocation");
+        ptr_glUniformMatrix4fv     = (PFNGLUNIFORMMATRIX4FVPROC)     glfwGetProcAddress("glUniformMatrix4fv");
+        ptr_glDeleteBuffers        = (PFNGLDELETEBUFFERSPROC)        glfwGetProcAddress("glDeleteBuffers");
+        ptr_glDeleteVertexArrays   = (PFNGLDELETEVERTEXARRAYSPROC)   glfwGetProcAddress("glDeleteVertexArrays");
+        ptr_glDeleteProgram        = (PFNGLDELETEPROGRAMPROC)        glfwGetProcAddress("glDeleteProgram");
+        ptr_glDrawElements         = (PFNGLDRAWELEMENTSPROC)         glfwGetProcAddress("glDrawElements");
+    }
+
+    /* Wrapper macros to use function pointers */
+    #define glCreateShader         ptr_glCreateShader
+    #define glShaderSource         ptr_glShaderSource
+    #define glCompileShader        ptr_glCompileShader
+    #define glGetShaderiv          ptr_glGetShaderiv
+    #define glGetShaderInfoLog     ptr_glGetShaderInfoLog
+    #define glCreateProgram        ptr_glCreateProgram
+    #define glAttachShader         ptr_glAttachShader
+    #define glLinkProgram          ptr_glLinkProgram
+    #define glDeleteShader         ptr_glDeleteShader
+    #define glGetProgramiv         ptr_glGetProgramiv
+    #define glGetProgramInfoLog    ptr_glGetProgramInfoLog
+    #define glGenVertexArrays      ptr_glGenVertexArrays
+    #define glGenBuffers           ptr_glGenBuffers
+    #define glBindVertexArray      ptr_glBindVertexArray
+    #define glBindBuffer           ptr_glBindBuffer
+    #define glBufferData           ptr_glBufferData
+    #define glVertexAttribPointer  ptr_glVertexAttribPointer
+    #define glEnableVertexAttribArray ptr_glEnableVertexAttribArray
+    #define glUseProgram           ptr_glUseProgram
+    #define glGetUniformLocation   ptr_glGetUniformLocation
+    #define glUniformMatrix4fv     ptr_glUniformMatrix4fv
+    #define glDeleteBuffers        ptr_glDeleteBuffers
+    #define glDeleteVertexArrays   ptr_glDeleteVertexArrays
+    #define glDeleteProgram        ptr_glDeleteProgram
+    #define glDrawElements         ptr_glDrawElements
 #else
     #include <GL/gl.h>
 #endif
@@ -621,6 +708,10 @@ int main(int argc, char *argv[]) {
     if (!g_win) fatal("Cannot create window");
     glfwMakeContextCurrent(g_win);
     glfwSwapInterval(1);
+
+#ifdef _WIN32
+    load_gl_functions();
+#endif
 
     glfwSetMouseButtonCallback(g_win, mouse_cb);
     glfwSetCursorPosCallback(g_win, cursor_cb);
